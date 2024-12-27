@@ -4,6 +4,14 @@ import 'package:intl/intl.dart';
 import 'messages/messages.dart';
 import 'utils/utility.dart';
 
+/// Enumeration representing time units for minimum variance.
+enum TimeVarianceUnit {
+  seconds,
+  minutes,
+  hours,
+  days,
+}
+
 /// The `GetTimeAgo` class provides functionality to format a `DateTime` object into a
 /// human-readable "time ago" string such as "a minute ago", "5 days ago", etc.
 /// It supports multiple locales and allows for custom locale messages.
@@ -45,12 +53,16 @@ class GetTimeAgo {
   ///
   /// - If [locale] is passed, it uses the messages for that locale. Otherwise, it defaults to [_defaultLocale].
   /// - If [pattern] is passed, it will use the custom DateFormat pattern for displaying the date.
+  /// - [minimumVarianceUnit]: (optional) Determines the stopping point for displaying "Less than [Unit]" messages.
+  ///   For example, if set to `TimeVarianceUnit.minutes`, "Less than a minute" will be displayed
+  ///   until a minute has passed, unless it's less than 15 seconds ago.
   ///
   /// The function computes the time difference between the current time and [dateTime] and returns an appropriate message.
   static String parse(
     DateTime dateTime, {
     String? locale,
     String? pattern,
+    TimeVarianceUnit? minimumVarianceUnit,
   }) {
     // Get the locale, if not provided, fallback to the default locale.
     final selectedLocale = locale ?? _defaultLocale;
@@ -68,81 +80,67 @@ class GetTimeAgo {
     // Calculate the time difference between now and the provided dateTime.
     final elapsed = currentClock.difference(dateTime).abs();
 
-    // Retrieve the prefix and suffix for the time ago message.
-    final prefix = message.prefixAgo();
-    final suffix = message.suffixAgo();
-    String result;
-
-    // Determine the appropriate message based on the elapsed time.
-    if (elapsed.inSeconds < 15) {
-      // If the time difference is less than 15 seconds, display "just now".
-      result = formatMessage(
-        '',
-        message.justNow(elapsed.inSeconds),
-        '',
-        message,
-      );
-    } else if (elapsed.inSeconds < 60) {
-      // If the time difference is less than 60 seconds, display the seconds ago message.
-      result = formatMessage(
-        prefix,
-        message.secsAgo(elapsed.inSeconds),
-        suffix,
-        message,
-      );
-    } else if (elapsed.inMinutes < 2) {
-      // If the time difference is less than 2 minutes, display "a minute ago".
-      result = formatMessage(
-        prefix,
-        message.minAgo(elapsed.inMinutes),
-        suffix,
-        message,
-      );
-    } else if (elapsed.inMinutes < 60) {
-      // If the time difference is less than 60 minutes, display the minutes ago message.
-      result = formatMessage(
-        prefix,
-        message.minsAgo(elapsed.inMinutes),
-        suffix,
-        message,
-      );
-    } else if (elapsed.inHours < 2) {
-      // If the time difference is less than 2 hours, display "an hour ago".
-      result = formatMessage(
-        prefix,
-        message.hourAgo(elapsed.inHours),
-        suffix,
-        message,
-      );
-    } else if (elapsed.inHours < 24) {
-      // If the time difference is less than 24 hours, display the hours ago message.
-      result = formatMessage(
-        prefix,
-        message.hoursAgo(elapsed.inHours),
-        suffix,
-        message,
-      );
-    } else if (elapsed.inHours < 48) {
-      // If the time difference is less than 48 hours, display "a day ago".
-      result = formatMessage(
-        prefix,
-        message.dayAgo(elapsed.inHours ~/ 24),
-        suffix,
-        message,
-      );
-    } else if (elapsed.inDays < 8) {
-      // If the time difference is less than 8 days, display the days ago message.
-      result = formatMessage(
-        prefix,
-        message.daysAgo(elapsed.inDays),
-        suffix,
-        message,
-      );
-    } else {
-      // If the time difference is greater than 7 days, display the formatted date.
-      result = formattedDate;
+    // If no minimumVarianceUnit is provided, use the original behavior
+    if (minimumVarianceUnit == null) {
+      return _formatElapsed(elapsed, message, formattedDate);
     }
 
-    return result;
+    // Calculate the threshold and unit label based on the selected TimeVarianceUnit
+    Duration threshold;
+    String unitLabel;
+    switch (minimumVarianceUnit) {
+      case TimeVarianceUnit.seconds:
+        threshold = Duration(seconds: 15); // Default to "Just now" for < 15s
+        unitLabel = "seconds";
+        break;
+      case TimeVarianceUnit.minutes:
+        threshold = Duration(minutes: 1);
+        unitLabel = "minute";
+        break;
+      case TimeVarianceUnit.hours:
+        threshold = Duration(hours: 1);
+        unitLabel = "hour";
+        break;
+      case TimeVarianceUnit.days:
+        threshold = Duration(days: 1);
+        unitLabel = "day";
+        break;
+      default:
+        threshold = Duration.zero;
+        unitLabel = ""; // No label if no unit specified
+    }
+
+    // Handle "Just now" and "Less than [Unit]" logic
+    if (elapsed < Duration(seconds: 15)) {
+      return message.justNow(elapsed.inSeconds); // Display "Just now"
+    } else if (elapsed < threshold) {
+      return "Less than $unitLabel"; // Display "Less than [Unit]"
+    }
+
+    return _formatElapsed(elapsed, message, formattedDate);
+  }
+
+  /// Formats the elapsed time into a human-readable string based on predefined rules.
+  static String _formatElapsed(Duration elapsed, Messages message, String formattedDate) {
+    final prefix = message.prefixAgo();
+    final suffix = message.suffixAgo();
+
+    if (elapsed.inSeconds < 60) {
+      return formatMessage(prefix, message.secsAgo(elapsed.inSeconds), suffix, message);
+    } else if (elapsed.inMinutes < 2) {
+      return formatMessage(prefix, message.minAgo(elapsed.inMinutes), suffix, message);
+    } else if (elapsed.inMinutes < 60) {
+      return formatMessage(prefix, message.minsAgo(elapsed.inMinutes), suffix, message);
+    } else if (elapsed.inHours < 2) {
+      return formatMessage(prefix, message.hourAgo(elapsed.inHours), suffix, message);
+    } else if (elapsed.inHours < 24) {
+      return formatMessage(prefix, message.hoursAgo(elapsed.inHours), suffix, message);
+    } else if (elapsed.inHours < 48) {
+      return formatMessage(prefix, message.dayAgo(elapsed.inHours ~/ 24), suffix, message);
+    } else if (elapsed.inDays < 8) {
+      return formatMessage(prefix, message.daysAgo(elapsed.inDays), suffix, message);
+    } 
+    
+    return formattedDate;
   }
 }
